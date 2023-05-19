@@ -3,7 +3,7 @@ import 'package:test/test.dart';
 import 'package:isoworker/isoworker.dart';
 
 void workerMethod(Stream<WorkerData> message) {
-  final _map = {
+  final testMap = {
     'key_1': 'val_1',
     'key_2': 'val_2',
   };
@@ -11,14 +11,20 @@ void workerMethod(Stream<WorkerData> message) {
     final command = data.value['command'];
     switch (command) {
       case 'get':
-        data.callback(_map[data.value['key']]);
+        data.callback(testMap[data.value['key']]);
         break;
       case 'set':
-        _map[data.value['key']] = data.value['val'];
+        testMap[data.value['key']] = data.value['val'];
         data.callback(null);
         break;
       case 'wait':
-        Future.delayed(Duration(milliseconds: 100)).then((_) {
+        Future.delayed(Duration(milliseconds: 200)).then((_) {
+          data.callback(null);
+        });
+        break;
+      case 'waitset':
+        Future.delayed(Duration(milliseconds: 200)).then((_) {
+          testMap[data.value['key']] = data.value['val'];
           data.callback(null);
         });
         break;
@@ -38,7 +44,6 @@ void main() {
     worker = await IsoWorker.init(workerMethod);
   });
   tearDown(() async {
-    await Future.delayed(Duration(milliseconds: 200));
     await worker.dispose();
   });
 
@@ -52,13 +57,21 @@ void main() {
 
   test('wait', () async {
     worker.exec({
-      'command': 'wait',
+      'command': 'waitset',
+      'key': 'key_1',
+      'val': 'val_1+',
     });
     final res = await worker.exec({
       'command': 'get',
       'key': 'key_1',
     });
     expect(res, 'val_1');
+    await Future.delayed(Duration(milliseconds: 300));
+    final res2 = await worker.exec({
+      'command': 'get',
+      'key': 'key_1',
+    });
+    expect(res2, 'val_1+');
   });
 
   test('no await', () async {
@@ -82,6 +95,13 @@ void main() {
           'key': 'key_1',
         }),
         throwsA(isA<Exception>()));
+  });
+
+  test('dispose2', () async {
+    worker.exec({
+      'command': 'wait',
+    });
+    await worker.dispose();
   });
 
   test('error', () async {

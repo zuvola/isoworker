@@ -3,7 +3,7 @@ import 'package:isoworker/isoworker.dart';
 /// Method to be called when `IsoWorker` is initialized.
 /// Provide a top-level or static method with `Stream<WorkerData>` as an argument.
 void workerMethod(Stream<WorkerData> message) {
-  final _map = {
+  final sampleMap = {
     'key_1': 'val_1',
     'key_2': 'val_2',
   };
@@ -14,7 +14,13 @@ void workerMethod(Stream<WorkerData> message) {
     switch (command) {
       case 'get':
         // Execute heavy processing, etc. and return the result as `WorkerData.callback`.
-        data.callback(_map[data.value['key']]);
+        data.callback(sampleMap[data.value['key']]);
+        break;
+      case 'wait':
+        Future.delayed(Duration(milliseconds: 200)).then((_) {
+          data.callback(sampleMap[data.value['key']]);
+        });
+        // data.callback(null);
         break;
       default:
         // Be sure to call `callback` even if there is nothing there.
@@ -26,13 +32,17 @@ void workerMethod(Stream<WorkerData> message) {
 void main() async {
   // Initialization
   final worker = await IsoWorker.init(workerMethod);
-  // Execute the task
-  final res = await worker.exec({
-    'command': 'get',
+  // Execute tasks
+  final exec1 = worker.exec({
+    'command': 'wait',
     'key': 'key_1',
   });
+  final exec2 = worker.exec({
+    'command': 'get',
+    'key': 'key_2',
+  });
+  final res = await Future.wait([exec1, exec2]);
   print(res);
   // Destroy the Worker
   await worker.dispose();
-  await Future.delayed(Duration(milliseconds: 100));
 }

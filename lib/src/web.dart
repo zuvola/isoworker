@@ -29,6 +29,11 @@ class IsoWorker {
   /// Destroying object.
   Future<void> dispose() async {
     if (_disposed) return;
+    // wait until all is complete
+    if (_completers.isNotEmpty) {
+      await Future.delayed(Duration(milliseconds: 100));
+      return dispose();
+    }
     _completers.forEach((i, v) => v.completeError('Already disposed.'));
     _completers.clear();
     _disposed = true;

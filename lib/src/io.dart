@@ -44,6 +44,11 @@ class IsoWorker {
   /// Destroying object.
   Future<void> dispose() async {
     if (_disposed) return;
+    // wait until all is complete
+    if (_completers.isNotEmpty) {
+      await Future.delayed(Duration(milliseconds: 100));
+      return dispose();
+    }
     _completers.forEach((i, v) => v.completeError('Already disposed.'));
     _completers.clear();
     await _subscription.cancel();
@@ -80,13 +85,6 @@ class IsoWorker {
         }
       };
       sink.add(value);
-      // assert(() {
-      //   Future.delayed(Duration(seconds: 10)).then((_) {
-      //     final done = value._done;
-      //     assert(done, 'Callback need to be called.');
-      //   });
-      //   return true;
-      // }());
     }));
     config.func(stream);
   }
