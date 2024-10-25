@@ -56,6 +56,7 @@ void main() {
   });
 
   test('wait', () async {
+    expect(worker.inProgress, false);
     worker.exec({
       'command': 'waitset',
       'key': 'key_1',
@@ -65,12 +66,14 @@ void main() {
       'command': 'get',
       'key': 'key_1',
     });
+    expect(worker.inProgress, true);
     expect(res, 'val_1');
     await Future.delayed(Duration(milliseconds: 300));
     final res2 = await worker.exec({
       'command': 'get',
       'key': 'key_1',
     });
+    expect(worker.inProgress, false);
     expect(res2, 'val_1+');
   });
 
@@ -98,9 +101,11 @@ void main() {
   });
 
   test('dispose2', () async {
+    expect(worker.inProgress, false);
     worker.exec({
       'command': 'wait',
     });
+    expect(worker.inProgress, true);
     await worker.dispose();
   });
 
@@ -116,6 +121,7 @@ void main() {
       expect(exception, isNotNull);
       expect(stack, isNotNull);
     });
+    expect(worker.inProgress, true);
     try {
       await worker.exec({
         'command': 'error',
@@ -124,6 +130,7 @@ void main() {
       exception = e;
       stack = s;
     }
+    expect(worker.inProgress, false);
     expect(exception, isNotNull);
     expect(stack, isNotNull);
     final res = await worker.exec({

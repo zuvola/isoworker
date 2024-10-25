@@ -13,6 +13,9 @@ class IsoWorker {
   final Map<int, Completer> _completers = {};
   bool _disposed = false;
 
+  // Whether it is being processed or not.
+  bool get inProgress => _completers.isNotEmpty;
+
   IsoWorker._();
 
   /// Initialization.
