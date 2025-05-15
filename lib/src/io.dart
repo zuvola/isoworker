@@ -81,11 +81,12 @@ class IsoWorker {
         StreamTransformer.fromHandlers(handleData: (value, sink) {
       value.callback = (data) {
         final done = value.done;
-        assert(!done, 'Do not call the callback twice.');
-        if (!done) {
-          value.done = true;
-          config.port.send(WorkerData(value.id, data));
+        if (done) {
+          sink.addError(StateError('Do not call the callback twice.'),
+              StackTrace.current);
         }
+        value.done = true;
+        config.port.send(WorkerData(value.id, data));
       };
       sink.add(value);
     }));

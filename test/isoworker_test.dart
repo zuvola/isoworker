@@ -28,14 +28,16 @@ void workerMethod(Stream<WorkerData> message) {
           data.callback(null);
         });
         break;
-      case 'nocallback':
+      case 'twocallbacks':
+        data.callback(1);
+        data.callback(2);
         break;
       case 'error':
         throw Exception('error');
       default:
         data.callback(null);
     }
-  });
+  }, onError: (e) => print('error: $e\nstack: ${e.stackTrace}'));
 }
 
 void main() {
@@ -138,5 +140,11 @@ void main() {
       'key': 'key_1',
     });
     expect(res, 'val_1');
+  });
+
+  test('two callbacks', () async {
+    await worker.exec({
+      'command': 'twocallbacks',
+    });
   });
 }
