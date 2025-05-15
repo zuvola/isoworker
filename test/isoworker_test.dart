@@ -115,7 +115,7 @@ void main() {
     final worker = await IsoWorker.init(workerMethod);
     Object? exception;
     StackTrace? stack;
-    worker.exec({
+    final waitFuture = worker.exec({
       'command': 'wait',
     }).onError((e, s) {
       exception = e;
@@ -140,6 +140,8 @@ void main() {
       'key': 'key_1',
     });
     expect(res, 'val_1');
+    await waitFuture;
+    await worker.dispose();
   });
 
   test('two callbacks', () async {

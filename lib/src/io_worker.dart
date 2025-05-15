@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
-
-import 'common.dart';
+import 'worker_data.dart';
+import 'worker_entry.dart';
 
 /// A wrapping of the `Isolate` class to make it easier to write parallel processes.
 class IsoWorker {
@@ -28,18 +28,28 @@ class IsoWorker {
 
   Future<void> _init<T>(IsoFunction func) async {
     _isolate = await Isolate.spawn(
-        _entryPoint, _WorkerConfig(_receivePort.sendPort, func),
-        onError: _errorPort.sendPort, errorsAreFatal: false);
+      workerEntryPoint,
+      WorkerConfig(_receivePort.sendPort, func),
+      onError: _errorPort.sendPort,
+      errorsAreFatal: false,
+    );
     final port = _receivePort.asBroadcastStream();
     _sendPort = await port.first as SendPort;
     _subscription = port.cast<WorkerData>().listen((data) {
-      _completers[data.id]?.complete(data.value);
-      _completers.remove(data.id);
+      final completer = _completers.remove(data.id);
+      if (completer != null) {
+        completer.complete(data.value);
+      }
     });
     _errorPort.listen((errorData) {
-      final exception = errorData[0];
-      final stack = StackTrace.fromString(errorData[1]);
-      _completers.forEach((i, v) => v.completeError(exception, stack));
+      if (errorData is List && errorData.length >= 2) {
+        final exception = errorData[0];
+        final stack = StackTrace.fromString(errorData[1].toString());
+        _completers.forEach((i, v) => v.completeError(exception, stack));
+      } else {
+        _completers.forEach(
+            (i, v) => v.completeError('Unknown error', StackTrace.current));
+      }
       _completers.clear();
     });
   }
@@ -48,20 +58,23 @@ class IsoWorker {
   Future<void> dispose() async {
     if (_disposed) return;
     // wait until all is complete
-    if (_completers.isNotEmpty) {
+    int retry = 0;
+    const maxRetry = 50;
+    while (_completers.isNotEmpty && retry < maxRetry) {
       await Future.delayed(Duration(milliseconds: 100));
-      return dispose();
+      retry++;
     }
-    _completers.forEach((i, v) => v.completeError('Already disposed.'));
-    _completers.clear();
+    if (_completers.isNotEmpty) {
+      _completers.forEach((i, v) => v.completeError('Dispose timeout.'));
+      _completers.clear();
+    }
     await _subscription.cancel();
     _receivePort.close();
     _errorPort.close();
-    _isolate.kill();
+    _isolate.kill(priority: Isolate.immediate);
     _disposed = true;
   }
 
-  /// Execute the task with [data].
   Future<T> exec<T>(dynamic data) async {
     if (_disposed) {
       throw Exception('Already disposed.');
@@ -72,34 +85,4 @@ class IsoWorker {
     _sendPort.send(wd);
     return completer.future;
   }
-
-  static void _entryPoint(_WorkerConfig config) {
-    final receivePort = ReceivePort();
-    config.port.send(receivePort.sendPort);
-
-    final stream = receivePort.cast<WorkerData>().transform<WorkerData>(
-        StreamTransformer.fromHandlers(handleData: (value, sink) {
-      value.callback = (data) {
-        final done = value.done;
-        if (done) {
-          sink.addError(StateError('Do not call the callback twice.'),
-              StackTrace.current);
-        }
-        value.done = true;
-        config.port.send(WorkerData(value.id, data));
-      };
-      sink.add(value);
-    }));
-    config.func(stream);
-  }
-}
-
-class _WorkerConfig {
-  final SendPort port;
-  final IsoFunction func;
-
-  const _WorkerConfig(
-    this.port,
-    this.func,
-  );
 }

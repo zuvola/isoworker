@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'common.dart';
+import 'worker_data.dart';
 
 class IsoWorker {
   final _stream = StreamController<WorkerData>();

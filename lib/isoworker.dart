@@ -2,5 +2,5 @@
 
 library isoworker;
 
-export 'src/io.dart' if (dart.library.html) 'src/web.dart';
-export 'src/common.dart';
+export 'src/io_worker.dart' if (dart.library.html) 'src/web.dart';
+export 'src/worker_data.dart';
