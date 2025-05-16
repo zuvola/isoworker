@@ -10,10 +10,10 @@ class IsoWorker {
   late final Isolate _isolate;
   late final SendPort _sendPort;
   late final StreamSubscription _subscription;
-  final Map<int, Completer> _completers = {};
+  final Map<int, Completer<dynamic>> _completers = {};
   bool _disposed = false;
 
-  // Whether it is being processed or not.
+  /// Whether there are any pending tasks (not necessarily "actively processing").
   bool get inProgress => _completers.isNotEmpty;
 
   IsoWorker._();
@@ -44,7 +44,15 @@ class IsoWorker {
     _errorPort.listen((errorData) {
       if (errorData is List && errorData.length >= 2) {
         final exception = errorData[0];
-        final stack = StackTrace.fromString(errorData[1].toString());
+        final stackRaw = errorData[1];
+        StackTrace? stack;
+        if (stackRaw is StackTrace) {
+          stack = stackRaw;
+        } else if (stackRaw is String) {
+          stack = StackTrace.fromString(stackRaw);
+        } else {
+          stack = StackTrace.current;
+        }
         _completers.forEach((i, v) => v.completeError(exception, stack));
       } else {
         _completers.forEach(
@@ -57,7 +65,6 @@ class IsoWorker {
   /// Destroying object.
   Future<void> dispose() async {
     if (_disposed) return;
-    // wait until all is complete
     int retry = 0;
     const maxRetry = 50;
     while (_completers.isNotEmpty && retry < maxRetry) {
@@ -68,16 +75,24 @@ class IsoWorker {
       _completers.forEach((i, v) => v.completeError('Dispose timeout.'));
       _completers.clear();
     }
-    await _subscription.cancel();
-    _receivePort.close();
-    _errorPort.close();
-    _isolate.kill(priority: Isolate.immediate);
+    try {
+      await _subscription.cancel();
+    } catch (_) {}
+    try {
+      _receivePort.close();
+    } catch (_) {}
+    try {
+      _errorPort.close();
+    } catch (_) {}
+    try {
+      _isolate.kill(priority: Isolate.immediate);
+    } catch (_) {}
     _disposed = true;
   }
 
   Future<T> exec<T>(dynamic data) async {
     if (_disposed) {
-      throw Exception('Already disposed.');
+      throw StateError('IsoWorker has already been disposed.');
     }
     final completer = Completer<T>();
     final wd = WorkerData.gen(data);

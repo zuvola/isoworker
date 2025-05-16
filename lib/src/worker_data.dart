@@ -1,10 +1,9 @@
-import 'dart:isolate';
-
 /// Signature for the callback passed to [IsoWorker.init].
 typedef IsoFunction = void Function(Stream<WorkerData>);
 
 /// Message class for send to the Worker.
 class WorkerData {
+  static int _count = 0;
   final int id;
   final dynamic value;
   bool done = false;
@@ -13,6 +12,6 @@ class WorkerData {
   WorkerData(this.id, this.value);
 
   static WorkerData gen(dynamic value) {
-    return WorkerData(DateTime.now().microsecondsSinceEpoch, value);
+    return WorkerData(_count++, value);
   }
 }

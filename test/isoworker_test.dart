@@ -99,7 +99,7 @@ void main() {
           'command': 'get',
           'key': 'key_1',
         }),
-        throwsA(isA<Exception>()));
+        throwsA(isA<StateError>()));
   });
 
   test('dispose2', () async {
