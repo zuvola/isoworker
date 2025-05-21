@@ -1,80 +1,56 @@
 import 'dart:async';
 import 'dart:isolate';
+
+import 'worker_class.dart';
 import 'worker_data.dart';
 import 'worker_entry.dart';
+import 'worker_request_manager.dart';
 
-/// A wrapping of the `Isolate` class to make it easier to write parallel processes.
+/// A wrapper around Dart's `Isolate` class for easier parallel processing.
 class IsoWorker {
+  // The port to receive messages from the isolate.
   final _receivePort = ReceivePort();
-  final _errorPort = ReceivePort();
+  // The spawned isolate instance.
   late final Isolate _isolate;
+  // The port to send messages to the isolate.
   late final SendPort _sendPort;
+  // Subscription to the receive port's stream.
   late final StreamSubscription _subscription;
-  final Map<int, Completer<dynamic>> _completers = {};
+  // Whether this worker has been disposed.
   bool _disposed = false;
+  // Manages requests and their completion.
+  final _dataManager = WorkerRequestManager();
 
-  /// Whether there are any pending tasks (not necessarily "actively processing").
-  bool get inProgress => _completers.isNotEmpty;
+  /// Returns true if there are any pending tasks.
+  bool get inProgress => _dataManager.inProgress;
 
+  /// Private constructor.
   IsoWorker._();
 
-  /// Initialization.
-  /// Provide a top-level or static method with [Stream<WorkerData>] as an argument.
-  static Future<IsoWorker> init(IsoFunction func) async {
+  /// Factory method to create and initialize an IsoWorker.
+  static Future<IsoWorker> create(WorkerClass workerObj) async {
     final instance = IsoWorker._();
-    await instance._init(func);
+    await instance._create(workerObj);
     return instance;
   }
 
-  Future<void> _init<T>(IsoFunction func) async {
+  /// Internal method to spawn the isolate and set up communication.
+  Future<void> _create(WorkerClass workerObj) async {
     _isolate = await Isolate.spawn(
       workerEntryPoint,
-      WorkerConfig(_receivePort.sendPort, func),
-      onError: _errorPort.sendPort,
-      errorsAreFatal: false,
+      WorkerConfig(_receivePort.sendPort, workerObj.execute),
     );
     final port = _receivePort.asBroadcastStream();
     _sendPort = await port.first as SendPort;
     _subscription = port.cast<WorkerData>().listen((data) {
-      final completer = _completers.remove(data.id);
-      if (completer != null) {
-        completer.complete(data.value);
-      }
-    });
-    _errorPort.listen((errorData) {
-      if (errorData is List && errorData.length >= 2) {
-        final exception = errorData[0];
-        final stackRaw = errorData[1];
-        StackTrace? stack;
-        if (stackRaw is StackTrace) {
-          stack = stackRaw;
-        } else if (stackRaw is String) {
-          stack = StackTrace.fromString(stackRaw);
-        } else {
-          stack = StackTrace.current;
-        }
-        _completers.forEach((i, v) => v.completeError(exception, stack));
-      } else {
-        _completers.forEach(
-            (i, v) => v.completeError('Unknown error', StackTrace.current));
-      }
-      _completers.clear();
+      _dataManager.remove(data);
     });
   }
 
-  /// Destroying object.
+  /// Disposes the worker and cleans up resources.
   Future<void> dispose() async {
     if (_disposed) return;
-    int retry = 0;
-    const maxRetry = 50;
-    while (_completers.isNotEmpty && retry < maxRetry) {
-      await Future.delayed(Duration(milliseconds: 100));
-      retry++;
-    }
-    if (_completers.isNotEmpty) {
-      _completers.forEach((i, v) => v.completeError('Dispose timeout.'));
-      _completers.clear();
-    }
+    await _dataManager.dispose();
     try {
       await _subscription.cancel();
     } catch (_) {}
@@ -82,22 +58,19 @@ class IsoWorker {
       _receivePort.close();
     } catch (_) {}
     try {
-      _errorPort.close();
-    } catch (_) {}
-    try {
       _isolate.kill(priority: Isolate.immediate);
     } catch (_) {}
     _disposed = true;
   }
 
-  Future<T> exec<T>(dynamic data) async {
+  /// Sends a task to the isolate and returns the result asynchronously.
+  /// Throws if the worker has already been disposed.
+  Future<U> exec<T, U>(T data) async {
     if (_disposed) {
       throw StateError('IsoWorker has already been disposed.');
     }
-    final completer = Completer<T>();
-    final wd = WorkerData.gen(data);
-    _completers[wd.id] = completer;
-    _sendPort.send(wd);
-    return completer.future;
+    final req = _dataManager.create<T, U>(data);
+    _sendPort.send(req.data);
+    return req.completer.future;
   }
 }

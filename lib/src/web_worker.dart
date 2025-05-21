@@ -1,62 +1,71 @@
 import 'dart:async';
 
 import 'worker_data.dart';
+import 'worker_request_manager.dart';
+import 'worker_class.dart';
 
+/// Signature for the worker function.
+/// It receives a stream of WorkerData and should process tasks accordingly.
+typedef IsoFunction = void Function(Stream<WorkerData>);
+
+/// A worker implementation for web platforms using Streams instead of Isolates.
 class IsoWorker {
+  // Stream controller for sending tasks to the worker function.
   final _stream = StreamController<WorkerData>();
-  final Map<int, Completer> _completers = {};
+  // Manages requests and their completion.
+  final WorkerRequestManager _dataManager = WorkerRequestManager();
+  // Whether this worker has been disposed.
   bool _disposed = false;
 
-  // Whether it is being processed or not.
-  bool get inProgress => _completers.isNotEmpty;
+  /// Returns true if there are any tasks in progress.
+  bool get inProgress => _dataManager.inProgress;
 
   IsoWorker._();
 
-  /// Initialization.
-  /// Provide a top-level or static method with [Stream<WorkerData>] as an argument.
-  static Future<IsoWorker> init(IsoFunction func) async {
+  /// Factory method to create and initialize an IsoWorker.
+  /// [workerObj] should implement the execute method for processing tasks.
+  static Future<IsoWorker> create(WorkerClass workerObj) async {
     final instance = IsoWorker._();
-    await instance._init(func);
+    await instance._create(workerObj);
     return instance;
   }
 
-  Future<void> _init<T>(IsoFunction func) async {
+  /// Internal initialization logic using WorkerClass.
+  Future<void> _create(WorkerClass workerObj) async {
     runZonedGuarded(() {
-      func(_stream.stream);
-    }, ((e, s) {
-      _completers.forEach((i, v) => v.completeError(e, s));
-      _completers.clear();
-    }));
+      // Listen to the stream and process WorkerData tasks using workerObj.execute.
+      _stream.stream.listen((data) async {
+        try {
+          final ret = await workerObj.execute(data.value);
+          // Send result back to the manager.
+          _dataManager.remove(WorkerData(data.id, ret, null, null));
+        } catch (e, s) {
+          // Send error back to the manager.
+          _dataManager.remove(WorkerData(data.id, null, e, s));
+        }
+      });
+    }, (e, s) {
+      // Complete all pending tasks with error if an uncaught exception occurs.
+      _dataManager.clear(e.toString());
+    });
   }
 
-  /// Destroying object.
+  /// Disposes the worker and completes all pending tasks with an error.
   Future<void> dispose() async {
     if (_disposed) return;
-    // wait until all is complete
-    if (_completers.isNotEmpty) {
-      await Future.delayed(Duration(milliseconds: 100));
-      return dispose();
-    }
-    _completers.forEach((i, v) => v.completeError('Already disposed.'));
-    _completers.clear();
+    await _dataManager.dispose();
+    await _stream.close();
     _disposed = true;
   }
 
-  /// Execute the task with [data].
-  Future<T> exec<T>(dynamic data) async {
+  /// Sends a task to the worker and returns the result asynchronously.
+  /// Throws if the worker has already been disposed.
+  Future<U> exec<T, U>(T data) async {
     if (_disposed) {
-      throw Exception('Already disposed.');
+      throw StateError('IsoWorker has already been disposed.');
     }
-    final completer = Completer<T>();
-    final wd = WorkerData.gen(data);
-    _completers[wd.id] = completer;
-    wd.callback = (data) {
-      if (!completer.isCompleted) {
-        _completers.remove(wd.id);
-        completer.complete(data);
-      }
-    };
-    _stream.add(wd);
-    return completer.future;
+    final req = _dataManager.create<T, U>(data);
+    _stream.add(req.data);
+    return req.completer.future;
   }
 }

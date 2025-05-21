@@ -2,48 +2,40 @@ import 'package:test/test.dart';
 
 import 'package:isoworker/isoworker.dart';
 
-void workerMethod(Stream<WorkerData> message) {
-  final testMap = {
+class TestWorkerClass extends WorkerClass<Object, Map> {
+  final Map<String, Object> _storage = {
     'key_1': 'val_1',
-    'key_2': 'val_2',
+    'key_2': 2,
   };
-  message.listen((data) {
-    final command = data.value['command'];
+  @override
+  Future<Object?> execute(Map data) async {
+    final command = data['command'];
     switch (command) {
       case 'get':
-        data.callback(testMap[data.value['key']]);
-        break;
+        return _storage[data['key']];
       case 'set':
-        testMap[data.value['key']] = data.value['val'];
-        data.callback(null);
+        _storage[data['key']] = data['val'];
         break;
       case 'wait':
-        Future.delayed(Duration(milliseconds: 200)).then((_) {
-          data.callback(null);
-        });
-        break;
+        await Future.delayed(Duration(milliseconds: 200));
+        return _storage[data['key']];
       case 'waitset':
-        Future.delayed(Duration(milliseconds: 200)).then((_) {
-          testMap[data.value['key']] = data.value['val'];
-          data.callback(null);
-        });
-        break;
-      case 'twocallbacks':
-        data.callback(1);
-        data.callback(2);
+        await Future.delayed(Duration(milliseconds: 200));
+        _storage[data['key']] = data['val'];
         break;
       case 'error':
         throw Exception('error');
       default:
-        data.callback(null);
+        return null;
     }
-  }, onError: (e) => print('error: $e\nstack: ${e.stackTrace}'));
+    return null;
+  }
 }
 
 void main() {
   late IsoWorker worker;
   setUp(() async {
-    worker = await IsoWorker.init(workerMethod);
+    worker = await IsoWorker.create(TestWorkerClass());
   });
   tearDown(() async {
     await worker.dispose();
@@ -58,8 +50,7 @@ void main() {
   });
 
   test('wait', () async {
-    expect(worker.inProgress, false);
-    worker.exec({
+    await worker.exec({
       'command': 'waitset',
       'key': 'key_1',
       'val': 'val_1+',
@@ -68,7 +59,21 @@ void main() {
       'command': 'get',
       'key': 'key_1',
     });
+    expect(res, 'val_1+');
+  });
+
+  test('inProgress', () async {
+    expect(worker.inProgress, false);
+    worker.exec({
+      'command': 'waitset',
+      'key': 'key_1',
+      'val': 'val_1+',
+    });
     expect(worker.inProgress, true);
+    final res = await worker.exec({
+      'command': 'get',
+      'key': 'key_1',
+    });
     expect(res, 'val_1');
     await Future.delayed(Duration(milliseconds: 300));
     final res2 = await worker.exec({
@@ -77,19 +82,6 @@ void main() {
     });
     expect(worker.inProgress, false);
     expect(res2, 'val_1+');
-  });
-
-  test('no await', () async {
-    worker.exec({
-      'command': 'set',
-      'key': 'key_1',
-      'val': 'val_1+',
-    });
-    final res = await worker.exec({
-      'command': 'get',
-      'key': 'key_1',
-    });
-    expect(res, 'val_1+');
   });
 
   test('dispose', () async {
@@ -109,10 +101,21 @@ void main() {
     });
     expect(worker.inProgress, true);
     await worker.dispose();
+    expect(worker.inProgress, false);
+  });
+
+  test('dispose3', () async {
+    final waitFuture = worker.exec({
+      'command': 'wait',
+    });
+    worker.dispose();
+    expect(worker.inProgress, true);
+    await waitFuture;
+    expect(worker.inProgress, false);
   });
 
   test('error', () async {
-    final worker = await IsoWorker.init(workerMethod);
+    final worker = await IsoWorker.create(TestWorkerClass());
     Object? exception;
     StackTrace? stack;
     final waitFuture = worker.exec({
@@ -132,7 +135,6 @@ void main() {
       exception = e;
       stack = s;
     }
-    expect(worker.inProgress, false);
     expect(exception, isNotNull);
     expect(stack, isNotNull);
     final res = await worker.exec({
@@ -141,12 +143,7 @@ void main() {
     });
     expect(res, 'val_1');
     await waitFuture;
+    expect(worker.inProgress, false);
     await worker.dispose();
-  });
-
-  test('two callbacks', () async {
-    await worker.exec({
-      'command': 'twocallbacks',
-    });
   });
 }
