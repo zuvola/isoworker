@@ -1,11 +1,11 @@
 name: isoworker
-description: This is an easy to use wrapping of the Isolate class to make it easier to write parallel processes.
-version: 1.2.0
+description: A simple and unified API for parallel processing using Isolates and Streams in Dart, supporting both native and web platforms.
+version: 2.0.0
 homepage: https://github.com/zuvola/isoworker
 
 environment:
   sdk: ">=2.16.2 <4.0.0"
 
 dev_dependencies:
-  lints: ^2.1.1
-  test: ^1.25.8
+  lints: ^6.0.0
+  test: ^1.26.1

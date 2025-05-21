@@ -1,3 +1,9 @@
+## 2.0.0
+- This release introduces breaking changes.
+- Internal structure has been refactored to eliminate unnecessary processing.
+- Exceptions are now handled correctly.
+- Worker logic can now be defined using classes.
+
 ## 1.2.0
 - Add InProgress property.
 

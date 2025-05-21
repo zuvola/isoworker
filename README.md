@@ -4,57 +4,50 @@
 
 **[English](https://github.com/zuvola/isoworker/blob/master/README.md), [日本語](https://github.com/zuvola/isoworker/blob/master/README_jp.md)**
 
-`isoworker` is a wrapping of the `Isolate` class to make it easier to write parallel processes. 
+> **⚠️ Version 2.0 Notice:**  
+> This release introduces breaking changes.  
+> The usage and API have changed significantly from previous versions.  
+> Please read the updated documentation and usage examples below.
 
+`isoworker` provides a simple and unified API for parallel processing using Isolates (native) and Streams (web) in Dart.
+
+**Effortlessly harness the power of parallelism in your Dart and Flutter apps!**  
+With isoworker, you can easily offload heavy computations to background workers, keeping your UI smooth and responsive.  
+Whether you're building for native or web, isoworker gives you a consistent, easy-to-use interface for running tasks in parallel.
 
 ## Features
 
-- Unlike Flutter's `compute`, it doesn't create an `Isolate` object at task execution time, but uses it instead, so it has less overhead.
+- Lower overhead than Flutter's `compute` by reusing Isolate/Stream workers.
+- Supports both native and web platforms with a unified interface.
 - Tasks can be pipelined with `Future`.
-
+- Simple, extensible API for defining your own worker logic.
+- Great for CPU-intensive tasks, parsing, encoding, or any async workload.
 
 ## Usage
 
 ```dart
 import 'package:isoworker/isoworker.dart';
 
-/// Method to be called when `IsoWorker` is initialized.
-/// Provide a top-level or static method with `Stream<WorkerData>` as an argument.
-void workerMethod(Stream<WorkerData> message) {
-  final _map = {
-    'key_1': 'val_1',
-    'key_2': 'val_2',
-  };
-  // Receive messages (WorkerData) to a worker
-  message.listen((data) {
-    // `WorkerData.value` to receive data from the `exec` runtime.
-    final command = data.value['command'];
-    switch (command) {
-      case 'get':
-        // Execute heavy processing, etc. and return the result as `WorkerData.callback`.
-        data.callback(_map[data.value['key']]);
-        break;
-      default:
-        // Be sure to call `callback` even if there is nothing there.
-        data.callback(null);
-    }
-  });
+// Define your worker logic by extending WorkerClass.
+class MyWorker extends WorkerClass<String, String> {
+  @override
+  Future<String> execute(String data) async {
+    // Simulate heavy processing or any async task.
+    await Future.delayed(Duration(milliseconds: 100));
+    return 'Hello, $data!';
+  }
 }
 
 void main() async {
-  // Initialization
-  final worker = await IsoWorker.init(workerMethod);
-  // Execute the task
-  final res = await worker.exec({
-    'command': 'get',
-    'key': 'key_1',
-  });
-  print(res);
-  // Destroy the Worker
+  // Create and initialize the worker.
+  final worker = await IsoWorker.create(MyWorker());
+
+  // Execute a task.
+  final result = await worker.exec<String, String>('World');
+  print(result); // Output: Hello, World!
+
+  // Dispose the worker when done.
   await worker.dispose();
 }
 ```
 
-## Note
-
-If an Exception is thrown in the Worker method, all unexecuted tasks will be notified of the Exception.
