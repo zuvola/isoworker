@@ -38,10 +38,8 @@ class WorkerRequestManager {
     }
   }
 
-  /// Clears all pending requests, completing their completers with an optional error reason.
-  /// If a reason is provided, all pending requests are completed with an error.
-  /// Otherwise, they are completed normally.
-  void clear(String? reason) {
+  /// Completes all pending requests with an optional error.
+  void clear(Object? reason, [StackTrace? stackTrace]) {
     Logging.d(this, 'clear: $reason');
     for (var data in _data) {
       final completer = data.completer;
@@ -49,7 +47,7 @@ class WorkerRequestManager {
         if (reason == null) {
           completer.complete();
         } else {
-          completer.completeError(reason);
+          completer.completeError(reason, stackTrace);
         }
       }
     }
